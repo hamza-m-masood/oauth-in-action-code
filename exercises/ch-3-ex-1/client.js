@@ -26,8 +26,8 @@ var authServer = {
  * Add the client information in here
  */
 var client = {
-  client_id: "",
-  client_secret: "",
+  client_id: "oauth-client-1",
+  client_secret: "oauth-client-secret-1",
   redirect_uris: ["http://localhost:9000/callback"],
 };
 
@@ -46,12 +46,55 @@ app.get("/authorize", function (req, res) {
   /*
    * Send the user to the authorization server
    */
+  var authorizeUrl = buildUrl(authServer.authorizationEndpoint, {
+    response_type: "code",
+    client_id: client.client_id,
+    redirect_uri: client.redirect_uris[0],
+  });
+
+  console.log("redirect", authorizeUrl);
+  res.redirect(authorizeUrl);
 });
 
 app.get("/callback", function (req, res) {
   /*
    * Parse the response from the authorization server and get a token
    */
+  var code = req.query.code;
+  console.log("auth code:%s", code)
+
+  var form_data = qs.stringify({
+    grant_type: "authorization_code",
+    code: code,
+    redirect_uri: client.redirect_uris[0]
+  })
+
+  var headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Authorization': 'Basic ' + encodeClientCredentials(client.client_id, client.client_secret)
+  }
+
+  var tokRes = request("POST", authServer.tokenEndpoint, {
+    body: form_data,
+    headers: headers,
+  })
+
+  console.log("Rquestsing access token for %s", code)
+
+  if (tokRes.statusCode >= 200 && tokRes.statusCode < 300) {
+    var body = JSON.parse(tokRes.getBody());
+
+    access_token = body.access_token;
+    console.log("Got access token: %s", access_token);
+
+    res.render("index", { access_token: access_token, scope: scope });
+  } else {
+    res.render("error", {
+      error:
+        "Unable to fetch access token, server response: " + tokRes.statusCode,
+    });
+  }
+
 });
 
 app.get("/fetch_resource", function (req, res) {
@@ -73,7 +116,9 @@ var buildUrl = function (base, options, hash) {
     newUrl.hash = hash;
   }
 
-  return url.format(newUrl);
+  formatted = url.format(newUrl)
+
+  return formatted
 };
 
 var encodeClientCredentials = function (clientId, clientSecret) {
